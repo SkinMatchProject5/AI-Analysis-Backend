@@ -40,9 +40,9 @@ python -m app.main
 
 ### 4. API 확인
 
-- 홈페이지: http://localhost:8000/
-- API 문서: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+- 홈페이지: http://localhost:8001/
+- API 문서: http://localhost:8001/docs
+- ReDoc: http://localhost:8001/redoc
 
 ## 📋 주요 기능
 
@@ -143,7 +143,7 @@ python test_image_api.py
 ```
 
 ### Postman 테스트 가이드
-1. **POST** `http://localhost:8000/api/v1/diagnose/skin-lesion-image`
+1. **POST** `http://localhost:8001/api/v1/diagnose/skin-lesion-image`
 2. **Body** → **form-data** 선택
 3. **Key 설정**:
    - `image` (Type: File) → 이미지 파일 선택
