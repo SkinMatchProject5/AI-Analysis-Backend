@@ -8,10 +8,12 @@ from app.models.schemas import (
 from app.services.langchain_service import langchain_service
 from app.services.analysis_store import analysis_store
 from app.core.xml_utils import analysis_to_xml, analysis_list_to_xml
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
-@router.post("/analyze", response_model=AnalysisResponse)
+@router.post("/analyze/text", response_model=AnalysisResponse)
 async def create_analysis(request: AnalysisRequest):
     """새로운 텍스트 분석 요청"""
     try:
