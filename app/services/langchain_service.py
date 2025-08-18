@@ -199,15 +199,25 @@ class LangChainService:
     async def diagnose_skin_lesion_with_image(
         self, 
         image_base64: str, 
-        additional_info: Optional[str] = None
+        additional_info: Optional[str] = None,
+        questionnaire_data: Optional[dict] = None
     ) -> Dict[str, Any]:
         """이미지 기반 피부 병변 진단 (LangChain Vision 통합)"""
         try:
+            # 설문조사 데이터를 텍스트로 변환
+            questionnaire_text = ""
+            if questionnaire_data:
+                logger.info(f"설문조사 데이터 처리: {questionnaire_data}")
+                questionnaire_items = []
+                for key, value in questionnaire_data.items():
+                    questionnaire_items.append(f"- {key}: {value}")
+                questionnaire_text = f"\n\n설문조사 정보:\n" + "\n".join(questionnaire_items)
+            
             # Vision API용 텍스트 메시지 구성
             text_content = f"""
             환자의 피부 병변 이미지를 분석해주세요.
             
-            추가 정보: {additional_info or "추가 정보 없음"}
+            추가 정보: {additional_info or "추가 정보 없음"}{questionnaire_text}
             
             이미지에서 관찰되는 피부 병변의 특징을 바탕으로 진단하고, 
             반드시 다음 XML 형식으로 응답해주세요:
@@ -249,7 +259,8 @@ class LangChainService:
                 result=diagnosis_result,
                 analysis_type="skin_lesion_image_diagnosis",
                 additional_info=additional_info,
-                image_analyzed=True
+                image_analyzed=True,
+                questionnaire_included=bool(questionnaire_data)
             )
             
         except Exception as e:
