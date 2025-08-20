@@ -1,7 +1,6 @@
 import base64
 import io
 from PIL import Image
-from typing import Optional, Tuple
 from fastapi import UploadFile, HTTPException
 
 def encode_image_to_base64(image_file: UploadFile) -> str:
