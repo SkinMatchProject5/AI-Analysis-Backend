@@ -206,3 +206,4 @@ langchain/
 ## 📄 라이선스
 
 MIT License
+# Updated: Wed Aug 20 12:48:44 KST 2025
