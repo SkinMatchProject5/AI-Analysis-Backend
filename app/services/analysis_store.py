@@ -1,7 +1,6 @@
 from typing import Dict, List, Optional
 from app.models.schemas import SkinDiagnosisResponse
 from datetime import datetime
-import json
 
 class DiagnosisStore:
     """피부 진단 결과 저장소 (실제 환경에서는 데이터베이스 사용 권장)"""

@@ -8,17 +8,19 @@ from app.services.analysis_store import analysis_store
 from app.core.xml_utils import analysis_to_xml
 from app.core.image_utils import encode_image_to_base64, validate_image_file, get_image_info
 import logging
+from starlette.concurrency import run_in_threadpool
 import re
 import xml.etree.ElementTree as ET
 
 logger = logging.getLogger(__name__)
+XML_ROOT_PATTERN = re.compile(r'<root>.*?</root>', re.DOTALL)
 router = APIRouter()
 
 def parse_diagnosis_xml(xml_response: str) -> dict:
     """XML 응답을 파싱하여 구조화된 데이터로 변환"""
     try:
         # XML 형식이 포함된 응답에서 실제 XML 부분 추출
-        xml_match = re.search(r'<root>.*?</root>', xml_response, re.DOTALL)
+        xml_match = XML_ROOT_PATTERN.search(xml_response)
         if not xml_match:
             logger.warning(f"XML 형식을 찾을 수 없음: {xml_response}")
             return {
@@ -113,7 +115,7 @@ async def diagnose_skin_lesion(request: SkinLesionRequest):
         
         # 응답 형식에 따라 반환
         if request.response_format == ResponseFormat.XML:
-            xml_response = analysis_to_xml(stored_diagnosis.dict())
+            xml_response = analysis_to_xml(stored_diagnosis.model_dump())
             return Response(
                 content=xml_response,
                 media_type="application/xml"
@@ -136,11 +138,11 @@ async def diagnose_skin_lesion_with_image(
         # 이미지 파일 유효성 검사
         validate_image_file(image)
         
-        # 이미지 정보 추출
-        image_info = get_image_info(image)
+        # 이미지 정보 추출 (thread offload)
+        image_info = await run_in_threadpool(get_image_info, image)
         
-        # 이미지를 base64로 인코딩
-        image_base64 = encode_image_to_base64(image)
+        # 이미지를 base64로 인코딩 (thread offload)
+        image_base64 = await run_in_threadpool(encode_image_to_base64, image)
         
         # 설문조사 데이터 파싱
         parsed_questionnaire = None
@@ -188,7 +190,7 @@ async def diagnose_skin_lesion_with_image(
         
         # 응답 형식에 따라 반환
         if response_format == ResponseFormat.XML:
-            xml_response = analysis_to_xml(stored_diagnosis.dict())
+            xml_response = analysis_to_xml(stored_diagnosis.model_dump())
             return Response(
                 content=xml_response,
                 media_type="application/xml"
