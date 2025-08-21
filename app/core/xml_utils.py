@@ -1,5 +1,5 @@
 import xml.etree.ElementTree as ET
-from typing import Dict, Any, List
+from typing import Dict, Any
 from datetime import datetime
 
 def dict_to_xml(data: Dict[str, Any], root_name: str = "response") -> str:

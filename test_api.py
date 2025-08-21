@@ -5,8 +5,6 @@ API 테스트 스크립트
 """
 
 import requests
-import json
-from typing import Dict, Any
 
 BASE_URL = "http://localhost:8000/api/v1"
 

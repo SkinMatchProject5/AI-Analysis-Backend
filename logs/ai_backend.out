@@ -1,0 +1,27 @@
+/Users/sonseog-u/Downloads/skinmatch/AI-Analysis-Backend-main/venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:373: UserWarning: Valid config keys have changed in V2:
+* 'schema_extra' has been renamed to 'json_schema_extra'
+  warnings.warn(message, UserWarning)
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/sonseog-u/Downloads/skinmatch/AI-Analysis-Backend-main/app/main.py", line 4, in <module>
+    from app.api.skin_diagnosis import router as skin_router
+  File "/Users/sonseog-u/Downloads/skinmatch/AI-Analysis-Backend-main/app/api/skin_diagnosis.py", line 6, in <module>
+    from app.services.langchain_service import langchain_service
+  File "/Users/sonseog-u/Downloads/skinmatch/AI-Analysis-Backend-main/app/services/langchain_service.py", line 325, in <module>
+    langchain_service = LangChainService()
+                        ^^^^^^^^^^^^^^^^^^
+  File "/Users/sonseog-u/Downloads/skinmatch/AI-Analysis-Backend-main/app/services/langchain_service.py", line 18, in __init__
+    self.llm = ChatOpenAI(
+               ^^^^^^^^^^^
+  File "/Users/sonseog-u/Downloads/skinmatch/AI-Analysis-Backend-main/venv/lib/python3.11/site-packages/langchain_core/load/serializable.py", line 130, in __init__
+    super().__init__(*args, **kwargs)
+  File "/Users/sonseog-u/Downloads/skinmatch/AI-Analysis-Backend-main/venv/lib/python3.11/site-packages/pydantic/main.py", line 253, in __init__
+    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sonseog-u/Downloads/skinmatch/AI-Analysis-Backend-main/venv/lib/python3.11/site-packages/langchain_openai/chat_models/base.py", line 789, in validate_environment
+    self.root_client = openai.OpenAI(**client_params, **sync_specific)  # type: ignore[arg-type]
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/sonseog-u/Downloads/skinmatch/AI-Analysis-Backend-main/venv/lib/python3.11/site-packages/openai/_client.py", line 130, in __init__
+    raise OpenAIError(
+openai.OpenAIError: The api_key client option must be set either by passing api_key to the client or by setting the OPENAI_API_KEY environment variable

@@ -4,10 +4,8 @@
 """
 
 import requests
-import json
 from PIL import Image, ImageDraw
 import io
-import os
 
 BASE_URL = "http://localhost:8000/api/v1"
 
