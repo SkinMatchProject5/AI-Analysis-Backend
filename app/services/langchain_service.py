@@ -3,28 +3,43 @@ from langchain.prompts import ChatPromptTemplate
 from langchain.chains import LLMChain
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.core.config import settings
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional
 import uuid
 from datetime import datetime
 import logging
+import asyncio
+import httpx
+try:
+    from openai import OpenAIError  # type: ignore
+except Exception:  # pragma: no cover - 안전장치
+    class OpenAIError(Exception):
+        pass
 
 logger = logging.getLogger(__name__)
 
 class LangChainService:
-    """통일된 LangChain 기반 피부 병변 진단 서비스"""
+    """통일된 LangChain 기반 피부 병변 진단 서비스
+
+    모델 교체 가이드 (미래 지향, 현재 기능 유지):
+    - 교체 포인트 #1 (텍스트 LLM): __init__ 내 `self.llm` 생성부
+      -> Runpod/사내 엔드포인트로 전환 시, 이 지점을 커스텀 클라이언트로 대체
+    - 교체 포인트 #2 (비전 LLM): `vision_llm` 프로퍼티 내 `_vision_llm` 생성부
+      -> 이미지 입력을 지원하는 파인튜닝 모델 엔드포인트로 대체
+    - 교체 포인트 #3 (메시지 변환): `diagnose_skin_lesion_with_image`에서 messages 구성부
+      -> LangChain 메시지 대신 HTTP 요청 payload로 변환하는 어댑터 레이어 삽입
+
+    권장 구조 (교체 시):
+    - 어댑터 레이어 함수(ex. _call_text_model, _call_vision_model)를 만들어
+      내부에서 ChatOpenAI 호출 ↔ 외부 엔드포인트 호출을 쉽게 스위칭
+    - 환경변수 예시 (주석): MODEL_PROVIDER, CUSTOM_MODEL_ENDPOINT, CUSTOM_MODEL_API_KEY, CUSTOM_MODEL_NAME
+      (현재는 사용하지 않으며, 추후 필요 시 Settings에 추가 권장)
+    """
     
     def __init__(self):
-        # 통일된 LLM 인스턴스
-        self.llm = ChatOpenAI(
-            openai_api_key=settings.OPENAI_API_KEY,
-            model_name="gpt-4o-mini",
-            temperature=0.3,  # 의료 진단의 일관성을 위해 낮은 temperature
-            max_tokens=1000,
-            request_timeout=30  # 타임아웃 설정
-        )
-        
+        # 통일된 LLM 인스턴스는 지연 생성
+        self._llm: Optional[ChatOpenAI] = None
         # Vision 지원 LLM (필요시에만 생성)
-        self._vision_llm = None
+        self._vision_llm: Optional[ChatOpenAI] = None
         
         # 중앙화된 시스템 프롬프트
         self.system_prompt = self._get_system_prompt()
@@ -32,19 +47,36 @@ class LangChainService:
         # 통일된 프롬프트 템플릿들
         self.prompt_templates = self._initialize_prompt_templates()
         
-        # 통일된 체인들
-        self.chains = self._initialize_chains()
+        # 체인은 호출 시점에 생성하여 LLM 지연 초기화를 보장
     
     @property
+    def llm(self) -> ChatOpenAI:
+        if self._llm is None:
+            self._llm = ChatOpenAI(
+                openai_api_key=settings.OPENAI_API_KEY,
+                model_name="gpt-4o-mini",
+                temperature=settings.TEMPERATURE,
+                max_tokens=settings.MAX_TOKENS,
+                request_timeout=settings.REQUEST_TIMEOUT,
+            )
+        return self._llm
+
+    @property
     def vision_llm(self) -> ChatOpenAI:
-        """Vision API 지원 LLM (지연 로딩)"""
+        """Vision API 지원 LLM (지연 로딩)
+
+        [교체 포인트 #2]
+        - 이미지 입력을 지원하는 파인튜닝 모델로 전환할 경우,
+          이 지점에서 ChatOpenAI 대신 외부 엔드포인트 클라이언트를 생성/반환하도록 변경하세요.
+        - 엔드포인트가 이미지(base64)와 텍스트를 함께 받는다면, 아래 메시지 구성부(#3)와 맞춰 어댑트 필요.
+        """
         if self._vision_llm is None:
             self._vision_llm = ChatOpenAI(
                 openai_api_key=settings.OPENAI_API_KEY,
                 model_name="gpt-4o-mini",  # Vision 지원
-                temperature=0.3,
-                max_tokens=1000,
-                request_timeout=30
+                temperature=settings.TEMPERATURE,
+                max_tokens=settings.MAX_TOKENS,
+                request_timeout=settings.REQUEST_TIMEOUT,
             )
         return self._vision_llm
     
@@ -128,18 +160,20 @@ class LangChainService:
             ])
         }
     
-    def _initialize_chains(self) -> Dict[str, LLMChain]:
-        """통일된 체인 초기화"""
-        return {
-            "text_diagnosis": LLMChain(
-                llm=self.llm,
-                prompt=self.prompt_templates["text_diagnosis"]
-            ),
-            "custom_analysis": LLMChain(
-                llm=self.llm,
-                prompt=self.prompt_templates["custom_analysis"]
-            )
-        }
+    async def _retry_async(self, func, *args, **kwargs):
+        retries = max(0, settings.LLM_MAX_RETRIES)
+        delay_base = max(0.0, settings.LLM_RETRY_BASE_DELAY)
+        attempt = 0
+        while True:
+            try:
+                return await func(*args, **kwargs)
+            except (OpenAIError, httpx.HTTPError, TimeoutError) as e:  # type: ignore
+                if attempt >= retries:
+                    raise
+                backoff = delay_base * (2 ** attempt)
+                logger.warning(f"LLM 호출 실패, 재시도 {attempt+1}/{retries} 후 {backoff:.2f}s: {e}")
+                await asyncio.sleep(backoff)
+                attempt += 1
     
     async def _create_analysis_result(
         self, 
@@ -181,48 +215,24 @@ class LangChainService:
     ) -> Dict[str, Any]:
         """텍스트 기반 피부 병변 진단 (LangChain 통합)"""
         try:
-            # 이미지 진단과 같은 방식으로 직접 LLM 호출
-            text_content = f"""
-            환자의 피부 병변 정보:
-            
-            병변 설명: {lesion_description}
-            추가 정보: {additional_info or "추가 정보 없음"}
-            
-            위의 정보를 바탕으로 피부 병변을 진단하고, 지정된 XML 형식으로 응답해주세요.
-            반드시 다음 형식을 준수해야 합니다:
-            
-            <root>
-            <label id_code="코드" score="점수">진단명</label>
-            <summary>진단소견</summary>
-            <similar_labels>
-            <similar_label id_code="코드" score="점수">유사질병명</similar_label>
-            <similar_label id_code="코드" score="점수">유사질병명</similar_label>
-            </similar_labels>
-            </root>
-            """
-            
-            from langchain_core.messages import HumanMessage, SystemMessage
-            
-            messages = [
-                SystemMessage(content=self.system_prompt),
-                HumanMessage(content=text_content)
-            ]
-            
-            # LangChain을 통한 API 호출
-            result = await self.llm.agenerate([messages])
-            diagnosis_result = result.generations[0][0].text
-            
-            logger.info(f"LangChain 원본 결과: {diagnosis_result}")
+            prompt = self.prompt_templates["text_diagnosis"]
+            chain = LLMChain(llm=self.llm, prompt=prompt)
+            async def run_chain():
+                # 설문/추가정보 미주입: additional_info는 강제로 비워서 전달
+                return await chain.arun(
+                    lesion_description=lesion_description,
+                    additional_info="추가 정보 없음"
+                )
+            result = await self._retry_async(run_chain)
             
             return await self._create_analysis_result(
                 prompt=lesion_description,
-                result=diagnosis_result,
+                result=result,
                 analysis_type="skin_lesion_text_diagnosis",
                 additional_info=additional_info
             )
             
         except Exception as e:
-            logger.error(f"진단 중 상세 오류: {str(e)}", exc_info=True)
             raise await self._handle_analysis_error(e, "피부 병변 텍스트 진단")
     
     async def diagnose_skin_lesion_with_image(
@@ -233,21 +243,10 @@ class LangChainService:
     ) -> Dict[str, Any]:
         """이미지 기반 피부 병변 진단 (LangChain Vision 통합)"""
         try:
-            # 설문조사 데이터를 텍스트로 변환
-            questionnaire_text = ""
-            if questionnaire_data:
-                logger.info(f"설문조사 데이터 처리: {questionnaire_data}")
-                questionnaire_items = []
-                for key, value in questionnaire_data.items():
-                    questionnaire_items.append(f"- {key}: {value}")
-                questionnaire_text = f"\n\n설문조사 정보:\n" + "\n".join(questionnaire_items)
-            
-            # Vision API용 텍스트 메시지 구성
+            # Vision API용 텍스트 메시지 구성 (설문/추가정보 미주입)
             text_content = f"""
             환자의 피부 병변 이미지를 분석해주세요.
-            
-            추가 정보: {additional_info or "추가 정보 없음"}{questionnaire_text}
-            
+
             이미지에서 관찰되는 피부 병변의 특징을 바탕으로 진단하고, 
             반드시 다음 XML 형식으로 응답해주세요:
             
@@ -261,7 +260,12 @@ class LangChainService:
             </root>
             """
             
-            # LangChain을 통한 Vision API 호출
+            # [교체 포인트 #3]
+            # 메시지 → 요청 변환 레이어
+            # - 현재는 LangChain 메시지 포맷(SystemMessage/HumanMessage + image_url)을 사용합니다.
+            # - 외부 엔드포인트로 교체 시, 아래 messages 대신 HTTP 요청 바디를 구성하세요.
+            #   예) payload = {"prompt": text_content, "image_base64": image_base64, ...}
+            # - 응답 파싱부도 아래 `diagnosis_result`를 생성하는 부분을 해당 포맷에 맞춰 수정합니다.
             messages = [
                 SystemMessage(content=self.system_prompt),
                 HumanMessage(content=[
@@ -278,18 +282,20 @@ class LangChainService:
                     }
                 ])
             ]
-            
-            # LangChain을 통한 Vision API 호출
-            result = await self.vision_llm.agenerate([messages])
+
+            # LangChain을 통한 Vision API 호출 (현재 동작 유지)
+            async def run_vision():
+                return await self.vision_llm.agenerate([messages])
+            result = await self._retry_async(run_vision)
             diagnosis_result = result.generations[0][0].text
             
             return await self._create_analysis_result(
                 prompt="피부 병변 이미지 분석",
                 result=diagnosis_result,
                 analysis_type="skin_lesion_image_diagnosis",
-                additional_info=additional_info,
+                additional_info=None,
                 image_analyzed=True,
-                questionnaire_included=bool(questionnaire_data)
+                questionnaire_included=False
             )
             
         except Exception as e:
@@ -306,10 +312,14 @@ class LangChainService:
     ) -> Dict[str, Any]:
         """커스텀 프롬프트 분석 (LangChain 통합)"""
         try:
-            result = await self.chains["custom_analysis"].arun(
-                prompt=prompt,
-                system_message=system_message or self.system_prompt
-            )
+            template = self.prompt_templates["custom_analysis"]
+            chain = LLMChain(llm=self.llm, prompt=template)
+            async def run_chain():
+                return await chain.arun(
+                    prompt=prompt,
+                    system_message=system_message or self.system_prompt
+                )
+            result = await self._retry_async(run_chain)
             
             return await self._create_analysis_result(
                 prompt=prompt,

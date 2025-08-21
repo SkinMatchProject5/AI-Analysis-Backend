@@ -1,5 +1,4 @@
 from pydantic_settings import BaseSettings
-from typing import Optional
 import os
 from dotenv import load_dotenv
 
@@ -9,6 +8,26 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "info")
+    # LLM 호출 파라미터(기본값은 현재 코드 동작 유지)
+    REQUEST_TIMEOUT: int = int(os.getenv("REQUEST_TIMEOUT", "30"))
+    MAX_TOKENS: int = int(os.getenv("MAX_TOKENS", "1000"))
+    TEMPERATURE: float = float(os.getenv("TEMPERATURE", "0.3"))
+    LLM_MAX_RETRIES: int = int(os.getenv("LLM_MAX_RETRIES", "2"))
+    LLM_RETRY_BASE_DELAY: float = float(os.getenv("LLM_RETRY_BASE_DELAY", "0.5"))
+    # CORS 추가 허용(콤마구분)
+    ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "")
+
+    # 파이프라인/프로바이더 설정
+    SYMPTOM_REFINER_PROVIDER: str = os.getenv("SYMPTOM_REFINER_PROVIDER", "openai")
+    SYMPTOM_REFINER_MODEL: str = os.getenv("SYMPTOM_REFINER_MODEL", "gpt-4o-mini")
+
+    INTERPRETATION_PROVIDER: str = os.getenv("INTERPRETATION_PROVIDER", "openai")  # openai|runpod
+    INTERPRETATION_MODEL: str = os.getenv("INTERPRETATION_MODEL", "gpt-4o-mini")
+
+    # RunPod 전용 설정(미래 교체 대비)
+    RUNPOD_ENDPOINT_URL: str = os.getenv("RUNPOD_ENDPOINT_URL", "")
+    RUNPOD_API_KEY: str = os.getenv("RUNPOD_API_KEY", "")
+    RUNPOD_MODEL_ID: str = os.getenv("RUNPOD_MODEL_ID", "")
     
     class Config:
         env_file = ".env"
