@@ -44,7 +44,7 @@ source venv/bin/activate  # macOS/Linux
 pip install -r requirements.txt
 
 # 환경변수 설정
-cp .env.example .env
+cp .env .env
 # .env 파일에서 OPENAI_API_KEY 설정
 ```
 

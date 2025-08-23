@@ -3,6 +3,8 @@ from langchain.prompts import ChatPromptTemplate
 from langchain.chains import LLMChain
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.core.config import settings
+from app.providers.openai_medical import OpenAIMedicalInterpreter
+from app.providers.runpod_medical import RunPodMedicalInterpreter
 from typing import Dict, Any, Optional
 import uuid
 from datetime import datetime
@@ -19,20 +21,8 @@ logger = logging.getLogger(__name__)
 
 class LangChainService:
     """통일된 LangChain 기반 피부 병변 진단 서비스
-
-    모델 교체 가이드 (미래 지향, 현재 기능 유지):
-    - 교체 포인트 #1 (텍스트 LLM): __init__ 내 `self.llm` 생성부
-      -> Runpod/사내 엔드포인트로 전환 시, 이 지점을 커스텀 클라이언트로 대체
-    - 교체 포인트 #2 (비전 LLM): `vision_llm` 프로퍼티 내 `_vision_llm` 생성부
-      -> 이미지 입력을 지원하는 파인튜닝 모델 엔드포인트로 대체
-    - 교체 포인트 #3 (메시지 변환): `diagnose_skin_lesion_with_image`에서 messages 구성부
-      -> LangChain 메시지 대신 HTTP 요청 payload로 변환하는 어댑터 레이어 삽입
-
-    권장 구조 (교체 시):
-    - 어댑터 레이어 함수(ex. _call_text_model, _call_vision_model)를 만들어
-      내부에서 ChatOpenAI 호출 ↔ 외부 엔드포인트 호출을 쉽게 스위칭
-    - 환경변수 예시 (주석): MODEL_PROVIDER, CUSTOM_MODEL_ENDPOINT, CUSTOM_MODEL_API_KEY, CUSTOM_MODEL_NAME
-      (현재는 사용하지 않으며, 추후 필요 시 Settings에 추가 권장)
+    
+    프로바이더 시스템을 통해 OpenAI 또는 RunPod 파인튜닝 모델을 동적으로 사용합니다.
     """
     
     def __init__(self):
@@ -41,16 +31,45 @@ class LangChainService:
         # Vision 지원 LLM (필요시에만 생성)
         self._vision_llm: Optional[ChatOpenAI] = None
         
+        # 의료 진단 프로바이더 초기화
+        self._skin_diagnosis_provider = None
+        self._init_providers()
+        
         # 중앙화된 시스템 프롬프트
         self.system_prompt = self._get_system_prompt()
         
         # 통일된 프롬프트 템플릿들
         self.prompt_templates = self._initialize_prompt_templates()
+    
+    def _init_providers(self):
+        """프로바이더 초기화"""
+        skin_provider = settings.SKIN_DIAGNOSIS_PROVIDER.lower()
+        image_provider = settings.SKIN_DIAGNOSIS_IMAGE_PROVIDER.lower()
         
-        # 체인은 호출 시점에 생성하여 LLM 지연 초기화를 보장
+        if skin_provider == "runpod":
+            logger.info("RunPod 프로바이더를 사용합니다 (텍스트).")
+            self._skin_diagnosis_provider = RunPodMedicalInterpreter()
+        elif skin_provider == "openai":
+            logger.info("OpenAI 프로바이더를 사용합니다 (텍스트).")
+            self._skin_diagnosis_provider = OpenAIMedicalInterpreter()
+        else:
+            logger.warning(f"알 수 없는 프로바이더: {skin_provider}, OpenAI를 기본값으로 사용합니다.")
+            self._skin_diagnosis_provider = OpenAIMedicalInterpreter()
+        
+        # 이미지 진단용 별도 프로바이더
+        if image_provider == "openai":
+            logger.info("OpenAI 프로바이더를 사용합니다 (이미지).")
+            self._skin_diagnosis_image_provider = OpenAIMedicalInterpreter()
+        elif image_provider == "runpod":
+            logger.info("RunPod 프로바이더를 사용합니다 (이미지).")
+            self._skin_diagnosis_image_provider = RunPodMedicalInterpreter()
+        else:
+            logger.warning(f"알 수 없는 이미지 프로바이더: {image_provider}, OpenAI를 기본값으로 사용합니다.")
+            self._skin_diagnosis_image_provider = OpenAIMedicalInterpreter()
     
     @property
     def llm(self) -> ChatOpenAI:
+        """OpenAI 텍스트 모델 (증상 다듬기 등에 사용)"""
         if self._llm is None:
             self._llm = ChatOpenAI(
                 openai_api_key=settings.OPENAI_API_KEY,
@@ -63,13 +82,7 @@ class LangChainService:
 
     @property
     def vision_llm(self) -> ChatOpenAI:
-        """Vision API 지원 LLM (지연 로딩)
-
-        [교체 포인트 #2]
-        - 이미지 입력을 지원하는 파인튜닝 모델로 전환할 경우,
-          이 지점에서 ChatOpenAI 대신 외부 엔드포인트 클라이언트를 생성/반환하도록 변경하세요.
-        - 엔드포인트가 이미지(base64)와 텍스트를 함께 받는다면, 아래 메시지 구성부(#3)와 맞춰 어댑트 필요.
-        """
+        """OpenAI Vision API 지원 LLM (백업용, 현재는 사용하지 않음)"""
         if self._vision_llm is None:
             self._vision_llm = ChatOpenAI(
                 openai_api_key=settings.OPENAI_API_KEY,
@@ -109,51 +122,8 @@ class LangChainService:
 ⚠️ 의료 면책 조항: 이 진단은 참고용이며, 최종 진단은 반드시 의료진과 상담하세요."""
     
     def _initialize_prompt_templates(self) -> Dict[str, ChatPromptTemplate]:
-        """중앙화된 프롬프트 템플릿 초기화"""
+        """중앙화된 프롬프트 템플릿 초기화 (OpenAI 텍스트 모델용)"""
         return {
-            "text_diagnosis": ChatPromptTemplate.from_messages([
-                ("system", self.system_prompt),
-                ("human", """
-                환자의 피부 병변 정보:
-                
-                병변 설명: {lesion_description}
-                추가 정보: {additional_info}
-                
-                위의 정보를 바탕으로 피부 병변을 진단하고, 지정된 XML 형식으로 응답해주세요.
-                반드시 다음 형식을 준수해야 합니다:
-                
-                <root>
-                <label id_code="코드" score="점수">진단명</label>
-                <summary>진단소견</summary>
-                <similar_labels>
-                <similar_label id_code="코드" score="점수">유사질병명</similar_label>
-                <similar_label id_code="코드" score="점수">유사질병명</similar_label>
-                </similar_labels>
-                </root>
-                """)
-            ]),
-            
-            "image_diagnosis": ChatPromptTemplate.from_messages([
-                ("system", self.system_prompt),
-                ("human", """
-                환자의 피부 병변 이미지를 분석해주세요.
-                
-                추가 정보: {additional_info}
-                
-                이미지에서 관찰되는 피부 병변의 특징을 바탕으로 진단하고, 
-                반드시 다음 XML 형식으로 응답해주세요:
-                
-                <root>
-                <label id_code="코드" score="점수">진단명</label>
-                <summary>진단소견 (이미지에서 관찰된 구체적 특징 포함)</summary>
-                <similar_labels>
-                <similar_label id_code="코드" score="점수">유사질병명</similar_label>
-                <similar_label id_code="코드" score="점수">유사질병명</similar_label>
-                </similar_labels>
-                </root>
-                """)
-            ]),
-            
             "custom_analysis": ChatPromptTemplate.from_messages([
                 ("system", "{system_message}"),
                 ("human", "{prompt}")
@@ -167,7 +137,7 @@ class LangChainService:
         while True:
             try:
                 return await func(*args, **kwargs)
-            except (OpenAIError, httpx.HTTPError, TimeoutError) as e:  # type: ignore
+            except (OpenAIError, httpx.HTTPError, TimeoutError, Exception) as e:  # type: ignore
                 if attempt >= retries:
                     raise
                 backoff = delay_base * (2 ** attempt)
@@ -186,8 +156,13 @@ class LangChainService:
         """통일된 분석 결과 생성"""
         analysis_id = str(uuid.uuid4())
         
+        # 사용된 프로바이더 정보 추가
+        provider_info = "runpod" if settings.SKIN_DIAGNOSIS_PROVIDER.lower() == "runpod" else "openai"
+        model_info = "runpod-finetuned-model" if provider_info == "runpod" else "gpt-4o-mini"
+        
         base_metadata = {
-            "model": "gpt-4o-mini",
+            "model": model_info,
+            "provider": provider_info,
             "analysis_type": analysis_type,
             "additional_info_provided": bool(additional_info),
             "diagnosis_format": "xml_structured"
@@ -213,17 +188,17 @@ class LangChainService:
         lesion_description: str, 
         additional_info: Optional[str] = None
     ) -> Dict[str, Any]:
-        """텍스트 기반 피부 병변 진단 (LangChain 통합)"""
+        """텍스트 기반 피부 병변 진단 (프로바이더 시스템 사용)"""
         try:
-            prompt = self.prompt_templates["text_diagnosis"]
-            chain = LLMChain(llm=self.llm, prompt=prompt)
-            async def run_chain():
-                # 설문/추가정보 미주입: additional_info는 강제로 비워서 전달
-                return await chain.arun(
-                    lesion_description=lesion_description,
-                    additional_info="추가 정보 없음"
+            logger.info(f"텍스트 기반 진단 시작 - 프로바이더: {settings.SKIN_DIAGNOSIS_PROVIDER}")
+            
+            async def run_diagnosis():
+                return await self._skin_diagnosis_provider.diagnose_text(
+                    description=lesion_description,
+                    additional_info=additional_info
                 )
-            result = await self._retry_async(run_chain)
+            
+            result = await self._retry_async(run_diagnosis)
             
             return await self._create_analysis_result(
                 prompt=lesion_description,
@@ -241,62 +216,39 @@ class LangChainService:
         additional_info: Optional[str] = None,
         questionnaire_data: Optional[dict] = None
     ) -> Dict[str, Any]:
-        """이미지 기반 피부 병변 진단 (LangChain Vision 통합)"""
+        """이미지 기반 피부 병변 진단 (별도 프로바이더 시스템 사용)"""
         try:
-            # Vision API용 텍스트 메시지 구성 (설문/추가정보 미주입)
-            text_content = f"""
-            환자의 피부 병변 이미지를 분석해주세요.
-
-            이미지에서 관찰되는 피부 병변의 특징을 바탕으로 진단하고, 
-            반드시 다음 XML 형식으로 응답해주세요:
+            image_provider_name = settings.SKIN_DIAGNOSIS_IMAGE_PROVIDER.lower()
+            logger.info(f"이미지 기반 진단 시작 - 프로바이더: {image_provider_name}")
             
-            <root>
-            <label id_code="코드" score="점수">진단명</label>
-            <summary>진단소견 (이미지에서 관찰된 구체적 특징 포함)</summary>
-            <similar_labels>
-            <similar_label id_code="코드" score="점수">유사질병명</similar_label>
-            <similar_label id_code="코드" score="점수">유사질병명</similar_label>
-            </similar_labels>
-            </root>
-            """
+            async def run_diagnosis():
+                return await self._skin_diagnosis_image_provider.diagnose_image(
+                    image_base64=image_base64,
+                    additional_info=additional_info,
+                    questionnaire_data=questionnaire_data
+                )
             
-            # [교체 포인트 #3]
-            # 메시지 → 요청 변환 레이어
-            # - 현재는 LangChain 메시지 포맷(SystemMessage/HumanMessage + image_url)을 사용합니다.
-            # - 외부 엔드포인트로 교체 시, 아래 messages 대신 HTTP 요청 바디를 구성하세요.
-            #   예) payload = {"prompt": text_content, "image_base64": image_base64, ...}
-            # - 응답 파싱부도 아래 `diagnosis_result`를 생성하는 부분을 해당 포맷에 맞춰 수정합니다.
-            messages = [
-                SystemMessage(content=self.system_prompt),
-                HumanMessage(content=[
-                    {
-                        "type": "text",
-                        "text": text_content
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{image_base64}",
-                            "detail": "high"
-                        }
-                    }
-                ])
-            ]
-
-            # LangChain을 통한 Vision API 호출 (현재 동작 유지)
-            async def run_vision():
-                return await self.vision_llm.agenerate([messages])
-            result = await self._retry_async(run_vision)
-            diagnosis_result = result.generations[0][0].text
+            result = await self._retry_async(run_diagnosis)
             
-            return await self._create_analysis_result(
-                prompt="피부 병변 이미지 분석",
-                result=diagnosis_result,
-                analysis_type="skin_lesion_image_diagnosis",
-                additional_info=None,
-                image_analyzed=True,
-                questionnaire_included=False
-            )
+            # 이미지 프로바이더 정보로 메타데이터 생성
+            provider_info = image_provider_name
+            model_info = "gpt-4o-mini" if provider_info == "openai" else "runpod-finetuned-model"
+            
+            return {
+                "id": str(uuid.uuid4()),
+                "prompt": "피부 병변 이미지 분석",
+                "result": result,
+                "metadata": {
+                    "model": model_info,
+                    "provider": provider_info,
+                    "analysis_type": "skin_lesion_image_diagnosis",
+                    "additional_info_provided": bool(additional_info),
+                    "diagnosis_format": "xml_structured",
+                    "image_analyzed": True,
+                    "questionnaire_included": bool(questionnaire_data)
+                },
+                "created_at": datetime.now()
+            }
             
         except Exception as e:
             raise await self._handle_analysis_error(e, "이미지 기반 피부 병변 진단")
@@ -310,7 +262,7 @@ class LangChainService:
         prompt: str, 
         system_message: Optional[str] = None
     ) -> Dict[str, Any]:
-        """커스텀 프롬프트 분석 (LangChain 통합)"""
+        """커스텀 프롬프트 분석 (OpenAI 텍스트 모델 사용)"""
         try:
             template = self.prompt_templates["custom_analysis"]
             chain = LLMChain(llm=self.llm, prompt=template)
