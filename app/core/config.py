@@ -18,16 +18,18 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "")
 
     # 파이프라인/프로바이더 설정
+    SKIN_DIAGNOSIS_PROVIDER: str = os.getenv("SKIN_DIAGNOSIS_PROVIDER", "runpod")  # openai|runpod
+    SKIN_DIAGNOSIS_IMAGE_PROVIDER: str = os.getenv("SKIN_DIAGNOSIS_IMAGE_PROVIDER", "runpod")  # 이미지 전용 프로바이더
     SYMPTOM_REFINER_PROVIDER: str = os.getenv("SYMPTOM_REFINER_PROVIDER", "openai")
     SYMPTOM_REFINER_MODEL: str = os.getenv("SYMPTOM_REFINER_MODEL", "gpt-4o-mini")
 
     INTERPRETATION_PROVIDER: str = os.getenv("INTERPRETATION_PROVIDER", "openai")  # openai|runpod
     INTERPRETATION_MODEL: str = os.getenv("INTERPRETATION_MODEL", "gpt-4o-mini")
 
-    # RunPod 전용 설정(미래 교체 대비)
-    RUNPOD_ENDPOINT_URL: str = os.getenv("RUNPOD_ENDPOINT_URL", "")
+    # RunPod 전용 설정 (간단한 방식)
     RUNPOD_API_KEY: str = os.getenv("RUNPOD_API_KEY", "")
-    RUNPOD_MODEL_ID: str = os.getenv("RUNPOD_MODEL_ID", "")
+    RUNPOD_BASE_URL: str = os.getenv("RUNPOD_BASE_URL", "")
+    RUNPOD_MODEL_NAME: str = os.getenv("RUNPOD_MODEL_NAME", "")
     
     class Config:
         env_file = ".env"
