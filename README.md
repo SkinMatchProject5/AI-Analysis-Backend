@@ -24,11 +24,21 @@ pip install -r requirements.txt
 
 ```bash
 # .env 파일 생성
-cp .env.example .env
+cp .env .env
 
-# .env 파일 편집하여 OpenAI API 키 설정
+# .env 파일 편집하여 RunPod 설정
+RUNPOD_API_KEY=your_actual_runpod_api_key
+RUNPOD_MODEL_ID=your_actual_model_name
+SKIN_DIAGNOSIS_PROVIDER=runpod
+
+# OpenAI API 키도 설정 (다른 기능에서 사용)
 OPENAI_API_KEY=your_openai_api_key_here
 ```
+
+**⚠️ 중요: RunPod 설정**
+- `RUNPOD_API_KEY`: RunPod 계정에서 발급받은 실제 API 키
+- `RUNPOD_MODEL_ID`: 파인튜닝한 모델의 실제 이름
+- `SKIN_DIAGNOSIS_PROVIDER=runpod`: RunPod 모델 사용 설정
 
 ### 3. 서버 실행
 
@@ -71,7 +81,8 @@ python -m app.main
 - **환자 이해도 향상**: 복잡한 의료 용어 쉽게 설명
 
 ### ✨ 기술적 특징
-- **멀티 프로바이더**: OpenAI/RunPod 동적 전환 지원
+- **파인튜닝 모델 지원**: RunPod에서 호스팅되는 커스텀 파인튜닝 모델 사용
+- **멀티 프로바이더**: OpenAI/RunPod 동적 전환 지원 (환경변수로 제어)
 - **별도 파이프라인**: 각 기능별 독립적인 처리 흐름
 - **이미지 최적화**: 자동 리사이징, 압축, base64 인코딩
 - **CRUD API**: 분석 결과의 완전한 생명주기 관리
@@ -81,7 +92,8 @@ python -m app.main
 ### 🛠 기술 스택
 - **FastAPI 0.104+**: 고성능 async 웹 프레임워크 (포트 8001)
 - **LangChain 0.0.340+**: LLM 오케스트레이션 및 프롬프트 관리
-- **OpenAI GPT-4o-mini**: Vision API 지원 멀티모달 모델
+- **RunPod API**: 파인튜닝된 의료 진단 모델 (메인)
+- **OpenAI GPT-4o-mini**: Vision API 지원 멀티모달 모델 (백업)
 - **Pydantic 2.5+**: 데이터 검증 및 직렬화
 - **Pillow 10.1+**: 이미지 처리, 리사이징, 압축
 - **ORJSON**: 고성능 JSON 직렬화
@@ -196,6 +208,12 @@ POST /api/v1/analyze/custom?prompt=질문&system_message=시스템메시지
 ## 🧪 테스트
 
 ```bash
+# RunPod 통합 테스트 (프로바이더 설정 확인)
+python test_runpod_integration.py
+
+# RunPod API 직접 테스트
+python test_runpod_api.py
+
 # 일반 API 테스트
 python test_api.py
 
@@ -253,8 +271,16 @@ AI-Analysis-Backend-main/
 
 ### 필수 환경변수
 ```bash
-# OpenAI 설정 (필수)
+# OpenAI 설정 (백업 및 다른 기능용)
 OPENAI_API_KEY=your_openai_api_key_here
+
+# RunPod 파인튜닝 모델 설정 (메인 진단용)
+RUNPOD_ENDPOINT_URL=https://api.runpod.ai/v2/38cquxahqlbtlh/openai/v1/chat/completions
+RUNPOD_API_KEY=your_actual_runpod_api_key
+RUNPOD_MODEL_ID=your_actual_model_name
+
+# 프로바이더 설정
+SKIN_DIAGNOSIS_PROVIDER=runpod  # runpod 또는 openai
 
 # 서버 설정
 ENVIRONMENT=development
@@ -268,16 +294,11 @@ TEMPERATURE=0.3
 LLM_MAX_RETRIES=2
 LLM_RETRY_BASE_DELAY=0.5
 
-# 프로바이더 설정
+# 다른 파이프라인 프로바이더 설정
 SYMPTOM_REFINER_PROVIDER=openai
 SYMPTOM_REFINER_MODEL=gpt-4o-mini
 INTERPRETATION_PROVIDER=openai
 INTERPRETATION_MODEL=gpt-4o-mini
-
-# RunPod 설정 (선택사항, 미래 대비)
-RUNPOD_ENDPOINT_URL=
-RUNPOD_API_KEY=
-RUNPOD_MODEL_ID=
 ```
 
 ### 이미지 처리 설정
@@ -346,22 +367,43 @@ class CustomProvider(BaseProvider):
 ## 📞 지원 및 트러블슈팅
 
 ### 일반적인 문제 해결
-1. **OpenAI API 키 확인**
+1. **RunPod API 키 확인**
+   ```bash
+   echo $RUNPOD_API_KEY  # 키가 설정되었는지 확인
+   python test_runpod_integration.py  # RunPod 연결 테스트
+   ```
+
+2. **OpenAI API 키 확인**
    ```bash
    echo $OPENAI_API_KEY  # 키가 설정되었는지 확인
    ```
 
-2. **네트워크 연결 확인**
+3. **프로바이더 설정 확인**
    ```bash
+   echo $SKIN_DIAGNOSIS_PROVIDER  # runpod 또는 openai인지 확인
+   ```
+
+4. **네트워크 연결 확인**
+   ```bash
+   curl -I https://api.runpod.ai  # RunPod API 접근 가능한지 확인
    curl -I https://api.openai.com  # OpenAI API 접근 가능한지 확인
    ```
 
-3. **로그 확인**
+5. **로그 확인**
    ```bash
-   tail -f logs/server.log  # 실시간 로그 확인
+   tail -f logs/ai_backend.out  # 실시간 로그 확인
    ```
 
-4. **API 크레딧 확인**: OpenAI 대시보드에서 사용량 모니터링
+6. **프로바이더 전환 테스트**
+   ```bash
+   # OpenAI로 전환
+   export SKIN_DIAGNOSIS_PROVIDER=openai
+   python test_runpod_integration.py
+   
+   # RunPod로 전환
+   export SKIN_DIAGNOSIS_PROVIDER=runpod
+   python test_runpod_integration.py
+   ```
 
 ### 성능 최적화
 - **이미지 압축**: 업로드 전 이미지 크기 최적화
