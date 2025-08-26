@@ -16,6 +16,9 @@ class SkinDiagnosisResponse(BaseModel):
     similar_conditions: Optional[str] = Field(None, description="유사한 피부 질환")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="추가 메타데이터")
     created_at: datetime = Field(default_factory=datetime.now, description="생성 시간")
+    
+    # 병원 정보 필드 추가
+    hospitals: Optional[List[Dict[str, Any]]] = Field(default=None, description="관련 병원 목록")
 
     # 프론트엔드 호환을 위한 파생 필드(기능 동일, 표시용)
     @computed_field  # type: ignore[misc]
