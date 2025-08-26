@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     RUNPOD_BASE_URL: str = os.getenv("RUNPOD_BASE_URL", "")
     RUNPOD_MODEL_NAME: str = os.getenv("RUNPOD_MODEL_NAME", "")
     
+    # 병원 백엔드 설정
+    HOSPITAL_BACKEND_URL: str = os.getenv("HOSPITAL_BACKEND_URL", "http://localhost:8002")
+    
     class Config:
         env_file = ".env"
 

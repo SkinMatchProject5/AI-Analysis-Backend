@@ -147,6 +147,16 @@ async def diagnose_skin_lesion(request: SkinLesionRequest):
         # 결과 저장
         stored_diagnosis = analysis_store.create_diagnosis(formatted_result)
         
+        # 병원 백엔드에 병원 검색 요청 (백그라운드) - 주 진단명만 사용
+        from app.services.hospital_service import hospital_service
+        
+        # 유사질병은 제외하고 주 진단명만 사용 (정확도 향상)
+        hospital_service.search_hospitals_fire_and_forget(
+            diagnosis=parsed_data["diagnosis"],
+            description=parsed_data.get("recommendations", ""),
+            similar_diseases=[]  # 🔧 유사질병 제거! 주 진단명만 사용
+        )
+        
         # 응답 형식에 따라 반환
         if request.response_format == ResponseFormat.XML:
             xml_response = analysis_to_xml(stored_diagnosis.model_dump())
@@ -240,6 +250,16 @@ async def diagnose_skin_lesion_with_image(
         
         # 결과 저장
         stored_diagnosis = analysis_store.create_diagnosis(formatted_result)
+        
+        # 병원 백엔드에 병원 검색 요청 (백그라운드) - 주 진단명만 사용
+        from app.services.hospital_service import hospital_service
+        
+        # 유사질병은 제외하고 주 진단명만 사용 (정확도 향상)
+        hospital_service.search_hospitals_fire_and_forget(
+            diagnosis=parsed_data["diagnosis"],
+            description=parsed_data.get("recommendations", ""),
+            similar_diseases=[]  # 🔧 유사질병 제거! 주 진단명만 사용
+        )
         
         # 응답 형식에 따라 반환
         if response_format == ResponseFormat.XML:
