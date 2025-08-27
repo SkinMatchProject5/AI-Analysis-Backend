@@ -31,9 +31,9 @@ class LangChainService:
         # Vision 지원 LLM (필요시에만 생성)
         self._vision_llm: Optional[ChatOpenAI] = None
         
-        # 의료 진단 프로바이더 초기화
+        # 의료 진단 프로바이더는 지연 초기화
         self._skin_diagnosis_provider = None
-        self._init_providers()
+        self._skin_diagnosis_image_provider = None
         
         # 중앙화된 시스템 프롬프트
         self.system_prompt = self._get_system_prompt()
@@ -41,31 +41,37 @@ class LangChainService:
         # 통일된 프롬프트 템플릿들
         self.prompt_templates = self._initialize_prompt_templates()
     
-    def _init_providers(self):
-        """프로바이더 초기화"""
-        skin_provider = settings.SKIN_DIAGNOSIS_PROVIDER.lower()
-        image_provider = settings.SKIN_DIAGNOSIS_IMAGE_PROVIDER.lower()
-        
-        if skin_provider == "runpod":
-            logger.info("RunPod 프로바이더를 사용합니다 (텍스트).")
-            self._skin_diagnosis_provider = RunPodMedicalInterpreter()
-        elif skin_provider == "openai":
-            logger.info("OpenAI 프로바이더를 사용합니다 (텍스트).")
-            self._skin_diagnosis_provider = OpenAIMedicalInterpreter()
-        else:
-            logger.warning(f"알 수 없는 프로바이더: {skin_provider}, OpenAI를 기본값으로 사용합니다.")
-            self._skin_diagnosis_provider = OpenAIMedicalInterpreter()
-        
-        # 이미지 진단용 별도 프로바이더
-        if image_provider == "openai":
-            logger.info("OpenAI 프로바이더를 사용합니다 (이미지).")
-            self._skin_diagnosis_image_provider = OpenAIMedicalInterpreter()
-        elif image_provider == "runpod":
-            logger.info("RunPod 프로바이더를 사용합니다 (이미지).")
-            self._skin_diagnosis_image_provider = RunPodMedicalInterpreter()
-        else:
-            logger.warning(f"알 수 없는 이미지 프로바이더: {image_provider}, OpenAI를 기본값으로 사용합니다.")
-            self._skin_diagnosis_image_provider = OpenAIMedicalInterpreter()
+    @property
+    def skin_diagnosis_provider(self):
+        """피부 진단 프로바이더 (지연 로딩)"""
+        if self._skin_diagnosis_provider is None:
+            skin_provider = settings.SKIN_DIAGNOSIS_PROVIDER.lower()
+            if skin_provider == "runpod":
+                logger.info("RunPod 프로바이더를 사용합니다 (텍스트).")
+                self._skin_diagnosis_provider = RunPodMedicalInterpreter()
+            elif skin_provider == "openai":
+                logger.info("OpenAI 프로바이더를 사용합니다 (텍스트).")
+                self._skin_diagnosis_provider = OpenAIMedicalInterpreter()
+            else:
+                logger.warning(f"알 수 없는 프로바이더: {skin_provider}, OpenAI를 기본값으로 사용합니다.")
+                self._skin_diagnosis_provider = OpenAIMedicalInterpreter()
+        return self._skin_diagnosis_provider
+    
+    @property
+    def skin_diagnosis_image_provider(self):
+        """이미지 진단 프로바이더 (지연 로딩)"""
+        if self._skin_diagnosis_image_provider is None:
+            image_provider = settings.SKIN_DIAGNOSIS_IMAGE_PROVIDER.lower()
+            if image_provider == "openai":
+                logger.info("OpenAI 프로바이더를 사용합니다 (이미지).")
+                self._skin_diagnosis_image_provider = OpenAIMedicalInterpreter()
+            elif image_provider == "runpod":
+                logger.info("RunPod 프로바이더를 사용합니다 (이미지).")
+                self._skin_diagnosis_image_provider = RunPodMedicalInterpreter()
+            else:
+                logger.warning(f"알 수 없는 이미지 프로바이더: {image_provider}, OpenAI를 기본값으로 사용합니다.")
+                self._skin_diagnosis_image_provider = OpenAIMedicalInterpreter()
+        return self._skin_diagnosis_image_provider
     
     @property
     def llm(self) -> ChatOpenAI:
@@ -193,7 +199,7 @@ class LangChainService:
             logger.info(f"텍스트 기반 진단 시작 - 프로바이더: {settings.SKIN_DIAGNOSIS_PROVIDER}")
             
             async def run_diagnosis():
-                return await self._skin_diagnosis_provider.diagnose_text(
+                return await self.skin_diagnosis_provider.diagnose_text(
                     description=lesion_description,
                     additional_info=additional_info
                 )
@@ -222,7 +228,7 @@ class LangChainService:
             logger.info(f"이미지 기반 진단 시작 - 프로바이더: {image_provider_name}")
             
             async def run_diagnosis():
-                return await self._skin_diagnosis_image_provider.diagnose_image(
+                return await self.skin_diagnosis_image_provider.diagnose_image(
                     image_base64=image_base64,
                     additional_info=additional_info,
                     questionnaire_data=questionnaire_data

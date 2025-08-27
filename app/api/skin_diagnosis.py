@@ -147,6 +147,22 @@ async def diagnose_skin_lesion(request: SkinLesionRequest):
         # 결과 저장
         stored_diagnosis = analysis_store.create_diagnosis(formatted_result)
         
+        # 🚀 3개 서비스에 동시 전송 (백그라운드)
+        from app.services.hospital_service import hospital_service
+        from app.services.chatbot_service import chatbot_service
+        
+        # 1. 병원 백엔드에 병원 검색 요청 (백그라운드)
+        hospital_service.search_hospitals_fire_and_forget(
+            diagnosis=parsed_data["diagnosis"],
+            description=parsed_data.get("recommendations", ""),
+            similar_diseases=[]  # 주 진단명만 사용
+        )
+        
+        # 2. 챗봇 백엔드에 진단 결과 전송 (백그라운드)
+        chatbot_service.notify_diagnosis_fire_and_forget(
+            stored_diagnosis.model_dump()
+        )
+        
         # 응답 형식에 따라 반환
         if request.response_format == ResponseFormat.XML:
             xml_response = analysis_to_xml(stored_diagnosis.model_dump())
@@ -240,6 +256,22 @@ async def diagnose_skin_lesion_with_image(
         
         # 결과 저장
         stored_diagnosis = analysis_store.create_diagnosis(formatted_result)
+        
+        # 🚀 3개 서비스에 동시 전송 (백그라운드)
+        from app.services.hospital_service import hospital_service
+        from app.services.chatbot_service import chatbot_service
+        
+        # 1. 병원 백엔드에 병원 검색 요청 (백그라운드)
+        hospital_service.search_hospitals_fire_and_forget(
+            diagnosis=parsed_data["diagnosis"],
+            description=parsed_data.get("recommendations", ""),
+            similar_diseases=[]  # 주 진단명만 사용
+        )
+        
+        # 2. 챗봇 백엔드에 진단 결과 전송 (백그라운드)
+        chatbot_service.notify_diagnosis_fire_and_forget(
+            stored_diagnosis.model_dump()
+        )
         
         # 응답 형식에 따라 반환
         if response_format == ResponseFormat.XML:
