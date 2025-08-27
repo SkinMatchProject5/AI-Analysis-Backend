@@ -165,9 +165,9 @@ class RunPodMedicalInterpreter(MedicalInterpretationProvider):
             api_key=self.api_key,
             base_url=self.base_url,
             model=settings.RUNPOD_MODEL_NAME,
-            temperature=0.1,  # 낮은 온도로 빠른 처리
-            max_tokens=800,   # 적절한 토큰 수
-            timeout=45,       # 45초 타임아웃
+            temperature=0.05,  # 더 결정적인 응답
+            max_tokens=400,    # 토큰 수 절반으로 줄임
+            timeout=20,        # 20초 타임아웃
         )
         
         result = await optimized_llm.agenerate([messages])
