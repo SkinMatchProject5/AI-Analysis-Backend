@@ -60,7 +60,7 @@ class HospitalService:
             
             payload = {
                 "xml": xml_data,
-                "rerank_mode": "ce",
+                "rerank_mode": "off",
                 "top_k": 24,
                 "final_k": final_k
             }

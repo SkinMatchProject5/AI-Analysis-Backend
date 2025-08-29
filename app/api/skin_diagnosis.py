@@ -144,21 +144,25 @@ async def diagnose_skin_lesion(request: SkinLesionRequest):
             "created_at": diagnosis_result.get("created_at")
         }
         
-        # 결과 저장
-        stored_diagnosis = analysis_store.create_diagnosis(formatted_result)
-        
-        # 🚀 3개 서비스에 동시 전송 (백그라운드)
+        # 🏥 병원 검색 (동기적으로 실행하여 응답에 포함)
         from app.services.hospital_service import hospital_service
-        from app.services.chatbot_service import chatbot_service
         
-        # 1. 병원 백엔드에 병원 검색 요청 (백그라운드)
-        hospital_service.search_hospitals_fire_and_forget(
+        hospital_results = await hospital_service.search_hospitals_async(
             diagnosis=parsed_data["diagnosis"],
             description=parsed_data.get("recommendations", ""),
             similar_diseases=[]  # 주 진단명만 사용
         )
         
-        # 2. 챗봇 백엔드에 진단 결과 전송 (백그라운드)
+        # 병원 정보를 응답에 추가
+        if hospital_results and hospital_results.get("hospitals"):
+            formatted_result["hospitals"] = hospital_results["hospitals"]
+        
+        # 결과 저장
+        stored_diagnosis = analysis_store.create_diagnosis(formatted_result)
+        
+        # 🚀 챗봇 백엔드에 진단 결과 전송 (백그라운드)
+        from app.services.chatbot_service import chatbot_service
+        
         chatbot_service.notify_diagnosis_fire_and_forget(
             stored_diagnosis.model_dump()
         )
@@ -254,21 +258,25 @@ async def diagnose_skin_lesion_with_image(
             "created_at": diagnosis_result.get("created_at")
         }
         
-        # 결과 저장
-        stored_diagnosis = analysis_store.create_diagnosis(formatted_result)
-        
-        # 🚀 3개 서비스에 동시 전송 (백그라운드)
+        # 🏥 병원 검색 (동기적으로 실행하여 응답에 포함)
         from app.services.hospital_service import hospital_service
-        from app.services.chatbot_service import chatbot_service
         
-        # 1. 병원 백엔드에 병원 검색 요청 (백그라운드)
-        hospital_service.search_hospitals_fire_and_forget(
+        hospital_results = await hospital_service.search_hospitals_async(
             diagnosis=parsed_data["diagnosis"],
             description=parsed_data.get("recommendations", ""),
             similar_diseases=[]  # 주 진단명만 사용
         )
         
-        # 2. 챗봇 백엔드에 진단 결과 전송 (백그라운드)
+        # 병원 정보를 응답에 추가
+        if hospital_results and hospital_results.get("hospitals"):
+            formatted_result["hospitals"] = hospital_results["hospitals"]
+        
+        # 결과 저장
+        stored_diagnosis = analysis_store.create_diagnosis(formatted_result)
+        
+        # 🚀 챗봇 백엔드에 진단 결과 전송 (백그라운드)
+        from app.services.chatbot_service import chatbot_service
+        
         chatbot_service.notify_diagnosis_fire_and_forget(
             stored_diagnosis.model_dump()
         )
