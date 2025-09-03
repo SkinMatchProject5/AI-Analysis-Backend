@@ -146,7 +146,11 @@ class LangChainService:
             except (OpenAIError, httpx.HTTPError, TimeoutError, Exception) as e:  # type: ignore
                 if attempt >= retries:
                     raise
-                backoff = delay_base * (2 ** attempt)
+                # 이미지 진단의 경우 더 긴 백오프 적용
+                if hasattr(e, '__class__') and 'timeout' in str(e).lower():
+                    backoff = delay_base * (3 ** attempt)  # 지수 증가율 높임
+                else:
+                    backoff = delay_base * (2 ** attempt)
                 logger.warning(f"LLM 호출 실패, 재시도 {attempt+1}/{retries} 후 {backoff:.2f}s: {e}")
                 await asyncio.sleep(backoff)
                 attempt += 1

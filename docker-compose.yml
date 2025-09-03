@@ -1,0 +1,11 @@
+version: "3.9"
+services:
+  ai_analysis_backend:
+    build: .
+    image: skinmatch/ai-analysis-backend:latest
+    environment:
+      - LOG_LEVEL=info
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+

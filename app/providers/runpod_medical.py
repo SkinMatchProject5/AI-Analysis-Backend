@@ -33,7 +33,7 @@ class RunPodMedicalInterpreter(MedicalInterpretationProvider):
                 model=settings.RUNPOD_MODEL_NAME,  # 빈 문자열이 작동함
                 temperature=settings.TEMPERATURE,
                 max_tokens=settings.MAX_TOKENS,
-                timeout=settings.REQUEST_TIMEOUT,
+                timeout=60,  # settings.REQUEST_TIMEOUT 대신 고정값 사용
             )
         return self._llm
 
@@ -47,7 +47,7 @@ class RunPodMedicalInterpreter(MedicalInterpretationProvider):
                 model=settings.RUNPOD_MODEL_NAME,  # 빈 문자열이 작동함
                 temperature=settings.TEMPERATURE,
                 max_tokens=settings.MAX_TOKENS,
-                timeout=settings.REQUEST_TIMEOUT,
+                timeout=60,  # settings.REQUEST_TIMEOUT 대신 고정값 사용
             )
         return self._vision_llm
     
@@ -160,14 +160,14 @@ class RunPodMedicalInterpreter(MedicalInterpretationProvider):
         
         logger.info(f"RunPod Vision API 호출 (최적화 모드) - Base URL: {self.base_url}")
         
-        # 최적화된 LLM 설정
+        # 최적화된 LLM 설정 (이미지 진단용으로 더 긴 타임아웃)
         optimized_llm = ChatOpenAI(
             api_key=self.api_key,
             base_url=self.base_url,
             model=settings.RUNPOD_MODEL_NAME,
             temperature=0.05,  # 더 결정적인 응답
             max_tokens=400,    # 토큰 수 절반으로 줄임
-            timeout=20,        # 20초 타임아웃
+            timeout=60,        # 60초 타임아웃으로 증가
         )
         
         result = await optimized_llm.agenerate([messages])
